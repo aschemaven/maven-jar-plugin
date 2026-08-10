@@ -48,6 +48,15 @@ import org.apache.maven.shared.archiver.MavenArchiveConfiguration;
  */
 final class ToolExecutor {
     /**
+     * First JDK feature version whose {@code jar} tool can run {@code --validate} on archives
+     * that contain records. Earlier jar tools crash with "This feature requires ASM8" because
+     * {@code sun.tools.jar.FingerPrint} was pinned to {@code Opcodes.ASM7} (JDK-8282446, which
+     * affects 17 and 18); it was fixed in JDK 19 by the ASM 9.2 upgrade (JDK-8282508) and was
+     * not backported to a 17u or 18u update.
+     */
+    private static final int JDK_FIXING_JAR_VALIDATE = 19;
+
+    /**
      * The Maven project for which to create an archive.
      */
     final Project project;
@@ -359,7 +368,13 @@ final class ToolExecutor {
             }
         }
         clear();
-        if (archive.validate(arguments)) {
+        // The `jar --validate` operation of the JDK 17 and 18 `jar` tools crashes with
+        // "This feature requires ASM8" on any class compiled as a record, because their
+        // bundled ASM predates record-component support (JDK-8282446). The jar tool was
+        // fixed in JDK 19. Maven 4 runs on JDK 17+, so on JDK 17/18 we skip the
+        // post-creation validation pass; the archive was already created successfully
+        // by the `--create` pass above.
+        if (Runtime.version().feature() >= JDK_FIXING_JAR_VALIDATE && archive.validate(arguments)) {
             int status = executeJarTool();
             if (status != 0) {
                 var message = new StringBuilder()
@@ -375,6 +390,12 @@ final class ToolExecutor {
                 throw new MojoException(message.toString());
             }
             clear();
+        } else if (Runtime.version().feature() < JDK_FIXING_JAR_VALIDATE) {
+            logger.info("Skipping the `jar --validate` pass on JDK "
+                    + Runtime.version().feature()
+                    + ": that JDK's jar tool cannot validate archives containing records"
+                    + " (fixed in JDK " + JDK_FIXING_JAR_VALIDATE + "). The \"" + relativePath
+                    + "\" archive was created successfully.");
         }
         archive.saveArtifactPaths(artifactType, result);
     }

@@ -358,6 +358,22 @@ final class Archive {
      * @return container where to declare files and directories to archive
      */
     FileSet newTargetRelease(Path directory, Runtime.Version version) {
+        if (version == null) {
+            /*
+             * The base (version-less) release. The constructor seeds the base FileSet from the directory
+             * that first created this Archive. In a module hierarchy, that directory may be a
+             * `META-INF/versions-modular/<n>/<module>` directory when the file-tree walk visits it before
+             * the base `<module>` directory (directory iteration order is unspecified). Rebind the base
+             * FileSet to the true base directory in that case, so that baseRelease() always points at the
+             * version-less module directory rather than at a version-specific one (which has no module-info).
+             */
+            FileSet base = filesetForRelease.get(null);
+            if (base == null || !base.directory.equals(directory)) {
+                base = new FileSet(directory);
+                filesetForRelease.put(null, base);
+            }
+            return base;
+        }
         return filesetForRelease.computeIfAbsent(version, (key) -> new FileSet(directory));
     }
 

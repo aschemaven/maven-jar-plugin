@@ -177,16 +177,12 @@ final class Archive {
             if (tc != null && tc.isUpdated(item, attributes, isDirectory)) {
                 existingJAR = null; // Signal that the existing file is outdated.
             }
-            if (files.isEmpty()) {
-                /*
-                 * In our tests, it seems that the first file after the "-C" option needs to be relative
-                 * to the directory given to "-C" and all other files need to be absolute. This behavior
-                 * does not seem to be documented, but we couldn't get the "jar" tool to work otherwise
-                 * (except by repeating "-C" before each file).
-                 */
-                item = directory.relativize(item);
-            }
-            files.add(item);
+            // Store every file relative to the "-C" directory. `arguments()` repeats the "-C"
+            // option before each file, so all entries get a name relative to that directory
+            // regardless of the (unspecified) order in which files are added. Relativizing only
+            // the first file and leaving the rest absolute made the resulting entry names depend
+            // on processing order and produced absolute `.class` entry names on some platforms.
+            files.add(directory.relativize(item));
         }
 
         /**
@@ -202,9 +198,11 @@ final class Archive {
                     addTo.add("--release");
                     addTo.add(version);
                 }
-                addTo.add("-C");
-                addTo.add(directory);
-                addTo.addAll(files);
+                for (Path file : files) {
+                    addTo.add("-C");
+                    addTo.add(directory);
+                    addTo.add(file);
+                }
             }
         }
 

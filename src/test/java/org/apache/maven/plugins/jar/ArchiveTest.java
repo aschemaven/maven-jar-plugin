@@ -19,6 +19,10 @@
 package org.apache.maven.plugins.jar;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
 
@@ -123,5 +127,55 @@ class ArchiveTest {
         b.newTargetRelease(base, null);
         b.newTargetRelease(v16, r16);
         assertEquals(base, b.baseRelease().directory);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Every archived file must be recorded relative to its `-C` directory, regardless of the order
+    // in which the files were added. Relativizing only the first file left later files absolute,
+    // so the jar tool recorded absolute `.class` entry names and failed with "names do not match".
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    void jarEntriesAreRelativeRegardlessOfFileOrder() {
+        Path classes = Path.of("/p/target/classes"); // absolute, as in a real build
+        Path a = classes.resolve("myproject/HelloWorld.class");
+        Path b = classes.resolve("myproject/Utils.class");
+
+        assertAllEntriesRelative(argsAfterAdding(classes, a, b));
+        assertAllEntriesRelative(argsAfterAdding(classes, b, a)); // reverse order
+    }
+
+    private static List<Object> argsAfterAdding(Path directory, Path... filesInOrder) {
+        Archive archive = archive("myproject", directory);
+        var base = archive.baseRelease();
+        for (Path f : filesInOrder) {
+            base.add(f, null, false);
+        }
+        List<Object> args = new ArrayList<>();
+        archive.arguments(args);
+        return args;
+    }
+
+    /**
+     * Asserts that every {@link Path} in the jar-tool argument list, other than the values of
+     * {@code --file}/{@code --manifest}/{@code --main-class} and the {@code -C} directories, is a
+     * relative path (i.e. a jar entry name relative to its {@code -C} directory).
+     */
+    private static void assertAllEntriesRelative(List<Object> args) {
+        Set<Object> optionValues = new HashSet<>();
+        for (int i = 0; i + 1 < args.size(); i++) {
+            Object token = args.get(i);
+            if ("--file".equals(token)
+                    || "--manifest".equals(token)
+                    || "--main-class".equals(token)
+                    || "-C".equals(token)) {
+                optionValues.add(args.get(i + 1));
+            }
+        }
+        for (Object o : args) {
+            if (o instanceof Path p && !optionValues.contains(p)) {
+                assertFalse(p.isAbsolute(), "jar entry must be relative but was absolute: " + p);
+            }
+        }
     }
 }

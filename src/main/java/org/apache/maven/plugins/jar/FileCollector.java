@@ -313,6 +313,16 @@ final class FileCollector extends SimpleFileVisitor<Path> {
         }
         if (acceptsAllFiles && role == DirectoryRole.RESOURCES) {
             currentFilesToArchive.add(directory, attributes, true);
+            if (currentTargetVersion != null && directory.equals(currentFilesToArchive.directory)) {
+                // A whole `META-INF/versions/<n>` directory was just archived and its subtree is
+                // skipped. `Files.walkFileTree` does not call `postVisitDirectory` for a skipped
+                // subtree, so the reset that normally happens on exiting a version directory would
+                // be missed. Reset here; otherwise base files visited afterwards (directory
+                // iteration order is unspecified) would be added to this version's file set instead
+                // of the base release.
+                currentFilesToArchive = currentModule.baseRelease();
+                currentTargetVersion = null;
+            }
             return FileVisitResult.SKIP_SUBTREE;
         } else {
             directoryRoles.addLast(role);

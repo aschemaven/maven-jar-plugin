@@ -182,7 +182,15 @@ final class Archive {
             // regardless of the (unspecified) order in which files are added. Relativizing only
             // the first file and leaving the rest absolute made the resulting entry names depend
             // on processing order and produced absolute `.class` entry names on some platforms.
-            files.add(directory.relativize(item));
+            Path relative = directory.relativize(item);
+            if (relative.toString().isEmpty()) {
+                // The item is the "-C" directory itself (e.g. a `META-INF/versions/<n>` directory
+                // added as a whole). An empty file argument is invalid for the "jar" tool (some
+                // implementations reject it, others silently misbehave), so archive the whole
+                // directory content with ".".
+                relative = Path.of(".");
+            }
+            files.add(relative);
         }
 
         /**

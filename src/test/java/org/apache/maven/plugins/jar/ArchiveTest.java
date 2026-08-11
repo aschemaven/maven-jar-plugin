@@ -145,6 +145,26 @@ class ArchiveTest {
         assertAllEntriesRelative(argsAfterAdding(classes, b, a)); // reverse order
     }
 
+    @Test
+    void archivingADirectoryAsAWholeYieldsDotNotEmptyEntry() {
+        // A `META-INF/versions/<n>` directory is added to a FileSet whose "-C" directory is that
+        // same directory. relativize(dir, dir) is the empty path; an empty jar file argument is
+        // invalid, so it must become "." (archive the whole directory content).
+        Path versionDir = Path.of("/p/target/classes/META-INF/versions/9");
+        List<Object> args = argsAfterAdding(versionDir, versionDir);
+        Path jar = versionDir.resolve("out.jar");
+        boolean sawDot = false;
+        for (Object o : args) {
+            if (o instanceof Path p && !p.equals(jar) && !p.equals(versionDir)) {
+                assertFalse(p.toString().isEmpty(), "jar file argument must never be empty");
+                if (".".equals(p.toString())) {
+                    sawDot = true;
+                }
+            }
+        }
+        assertTrue(sawDot, "the whole -C directory must be archived with '.'");
+    }
+
     private static List<Object> argsAfterAdding(Path directory, Path... filesInOrder) {
         Archive archive = archive("myproject", directory);
         var base = archive.baseRelease();

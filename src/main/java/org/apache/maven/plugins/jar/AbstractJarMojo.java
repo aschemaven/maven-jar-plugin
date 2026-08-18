@@ -240,8 +240,15 @@ public abstract class AbstractJarMojo implements org.apache.maven.api.plugin.Moj
             }
         }
         if (Runtime.version().feature() < ToolExecutor.JDK_SUPPORT_DATE) {
-            log.warn("Reproducible build requires Java " + ToolExecutor.JDK_SUPPORT_DATE + " or later.");
-            return null;
+            // A reproducible build is requested (outputTimestamp is set; Maven 4 sets it by default).
+            // The jar tool can normalize the entry time stamps only on Java 19 or later, so rather than
+            // silently produce a non-reproducible archive, fail. Opt out by clearing outputTimestamp.
+            throw new MojoException("A reproducible build was requested (the outputTimestamp parameter or the"
+                    + " SOURCE_DATE_EPOCH environment variable is set), but this requires Java "
+                    + ToolExecutor.JDK_SUPPORT_DATE + " or later. The current Java version is "
+                    + Runtime.version().feature() + ". Either build with Java " + ToolExecutor.JDK_SUPPORT_DATE
+                    + "+ (the compilation target release may still be lower), or clear the"
+                    + " project.build.outputTimestamp property to opt out of reproducible builds.");
         }
         for (int i = time.length(); --i >= 0; ) {
             char c = time.charAt(i);

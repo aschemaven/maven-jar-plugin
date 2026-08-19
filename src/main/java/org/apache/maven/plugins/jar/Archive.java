@@ -239,6 +239,43 @@ final class Archive {
         }
 
         /**
+         * Returns whether this file set can be handed to the {@code jar} tool as a whole directory
+         * ({@code -C directory .}) instead of enumerating each file. This is possible only when the
+         * whole directory content is to be archived unchanged, so that letting the tool walk the
+         * directory itself gives exactly the same set of entries as our own enumeration would, plus
+         * the intermediate directory entries that enumeration drops.
+         *
+         * <p>The conditions are intentionally conservative; when any of them does not hold, we fall
+         * back to enumerating individual files (which is always correct):</p>
+         *
+         * <ul>
+         *   <li>No include/exclude filter is active ({@link #acceptAll}); otherwise the directory
+         *       content is a superset of the files to archive.</li>
+         *   <li>This is the base release ({@code version == null}). For a multi-release or modular
+         *       set, the base directory physically contains the {@code META-INF/versions/**} (or
+         *       module) sub-trees that were split into other file sets; walking the whole directory
+         *       would wrongly re-include them at the base level.</li>
+         *   <li>This archive is a package hierarchy ({@code moduleName == null}) with a single
+         *       release ({@code filesetForRelease.size() == 1}); a larger map means the directory
+         *       was split for other Java releases.</li>
+         *   <li>The directory does not physically contain a {@code META-INF/MANIFEST.MF}; that file
+         *       is deliberately excluded from the archived files and handed over with the
+         *       {@code --manifest} option instead, so walking the whole directory would add it a
+         *       second time and conflict with {@code --manifest}.</li>
+         * </ul>
+         *
+         * @param version the target Java release, or {@code null} for the base version
+         * @return whether the whole directory can be archived with a single {@code -C directory .}
+         */
+        private boolean useWholeDirectory(Runtime.Version version) {
+            return acceptAll
+                    && version == null
+                    && moduleName == null
+                    && filesetForRelease.size() == 1
+                    && !Files.exists(directory.resolve(MetadataFiles.META_INF).resolve(MetadataFiles.MANIFEST));
+        }
+
+        /**
          * Adds to the given list the arguments to provide to the "jar" tool for this version.
          * Elements added to the list shall be instances of {@link String} or {@link Path}.
          *
@@ -250,6 +287,18 @@ final class Archive {
                 if (version != null) {
                     addTo.add("--release");
                     addTo.add(version);
+                }
+                if (useWholeDirectory(version)) {
+                    /*
+                     * Hand the whole directory to the `jar` tool. It walks the directory itself,
+                     * which preserves the intermediate directory entries (`com/`, `com/acme/`, …)
+                     * that per-file enumeration drops, and sorts the entries in a reproducible
+                     * order (JDK-8276764). No explicit sort of `files` is needed in this branch.
+                     */
+                    addTo.add("-C");
+                    addTo.add(directory);
+                    addTo.add(Path.of("."));
+                    return;
                 }
                 if (isReproducible) {
                     files.sort(REPRODUCIBLE_ORDER);
@@ -283,6 +332,18 @@ final class Archive {
     private final boolean isReproducible;
 
     /**
+     * Whether no include/exclude filter is active for the files to archive.
+     * When {@code true} and the file set is otherwise "plain" (base release, package hierarchy,
+     * single release, no physical {@code MANIFEST.MF} to hand over via {@code --manifest}), the
+     * whole directory can be handed to the {@code jar} tool with {@code -C directory .} instead
+     * of enumerating each file. This preserves the intermediate directory entries and lets the
+     * tool sort the entries deterministically.
+     *
+     * @see FileSet#useWholeDirectory(Runtime.Version)
+     */
+    private final boolean acceptAll;
+
+    /**
      * Creates an initially empty set of files or directories.
      *
      * @param jarFile path to the <abbr>JAR</abbr> file to create
@@ -291,9 +352,10 @@ final class Archive {
      * @param directory the directory of the classes targeting the base Java release
      * @param forceCreation whether to force a new <abbr>JAR</abbr> file even if the content seems unchanged
      * @param isReproducible whether reproducible build was requested
+     * @param acceptAll whether no include/exclude filter is active for the files to archive
      * @param logger where to send a warning if an error occurred while checking an existing <abbr>JAR</abbr> file
      */
-    @SuppressWarnings("checkstyle:NeedBraces")
+    @SuppressWarnings({"checkstyle:NeedBraces", "checkstyle:ParameterNumber"})
     Archive(
             final Path jarFile,
             final String moduleName,
@@ -301,10 +363,12 @@ final class Archive {
             final Path directory,
             final boolean forceCreation,
             final boolean isReproducible,
+            final boolean acceptAll,
             final Log logger) {
         this.jarFile = jarFile;
         this.moduleName = moduleName;
         this.isReproducible = isReproducible;
+        this.acceptAll = acceptAll;
         filesetForRelease = new TreeMap<>((v1, v2) -> {
             if (v1 == v2) return 0;
             if (v1 == null) return -1;

@@ -98,9 +98,24 @@ final class FileCollector extends SimpleFileVisitor<Path> {
     private final PathMatcher directoryMatcher;
 
     /**
-     * Whether the matchers accept all files and there is no need to sort the files.
-     * In such case, we can declare whole directories to the {@code jar} tool instead
-     * of scanning the directory tree ourselves.
+     * Whether the matchers accept all files, i.e. no include/exclude filter is active.
+     * When there is no filtering, an unfiltered file set can be handed to the {@code jar}
+     * tool as a whole directory ({@code -C directory .}) instead of enumerating each file.
+     * This lets the tool walk the directory itself, which preserves the intermediate
+     * directory entries ({@code com/}, {@code com/acme/}, …) and sorts entries in a
+     * reproducible order (JDK-8276764). Enumerating individual files, on the contrary,
+     * makes the {@code jar} tool omit those directory entries.
+     */
+    private final boolean acceptAll;
+
+    /**
+     * Whether we can declare whole directories to the {@code jar} tool instead of scanning
+     * the directory tree ourselves while collecting files. This is a stricter condition than
+     * {@link #acceptAll}: it also requires that no reproducible order is requested, because
+     * declaring whole sub-directories during collection would mix directory entries with the
+     * individually-collected files in a way that is harder to sort deterministically. The
+     * {@code -C directory .} shortcut in {@link Archive.FileSet#arguments} does not have this
+     * restriction, because the {@code jar} tool sorts the whole directory by itself.
      */
     private final boolean addDirectories;
 
@@ -164,10 +179,9 @@ final class FileCollector extends SimpleFileVisitor<Path> {
         directoryRoles = new ArrayDeque<>();
         fileMatcher = matcherFactory.createPathMatcher(directory, mojo.getIncludes(), mojo.getExcludes(), false);
         directoryMatcher = matcherFactory.deriveDirectoryMatcher(fileMatcher);
-        addDirectories = !context.isReproducible()
-                && matcherFactory.isIncludesAll(fileMatcher)
-                && matcherFactory.isIncludesAll(directoryMatcher);
-        packageHierarchy = context.newArchive(null, null, directory);
+        acceptAll = matcherFactory.isIncludesAll(fileMatcher) && matcherFactory.isIncludesAll(directoryMatcher);
+        addDirectories = !context.isReproducible() && acceptAll;
+        packageHierarchy = context.newArchive(null, null, directory, acceptAll);
         moduleHierarchy = new LinkedHashMap<>();
         resetToPackageHierarchy();
     }
@@ -190,7 +204,7 @@ final class FileCollector extends SimpleFileVisitor<Path> {
     private void enterModuleDirectory(final Path directory) {
         String moduleName = directory.getFileName().toString();
         currentModule = moduleHierarchy.computeIfAbsent(
-                moduleName, (name) -> context.newArchive(name, currentTargetVersion, directory));
+                moduleName, (name) -> context.newArchive(name, currentTargetVersion, directory, acceptAll));
         currentFilesToArchive = currentModule.newTargetRelease(directory, currentTargetVersion);
     }
 

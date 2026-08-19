@@ -45,7 +45,8 @@ class ArchiveTest {
      * existing-JAR timestamp check, so the (here {@code null}) logger is never dereferenced.
      */
     private static Archive archive(String moduleName, Runtime.Version version, Path directory, boolean isReproducible) {
-        return new Archive(directory.resolve("out.jar"), moduleName, version, directory, true, isReproducible, null);
+        return new Archive(
+                directory.resolve("out.jar"), moduleName, version, directory, true, isReproducible, false, null);
     }
 
     /**

@@ -250,8 +250,10 @@ final class ToolExecutor {
      * @param  moduleName the module name if using module hierarchy, or {@code null} if using package hierarchy
      * @param  version the target Java release, or {@code null} for the base version
      * @param  directory the directory of the classes targeting the base Java release
+     * @param  acceptAll whether no include/exclude filter is active for the files to archive
      */
-    Archive newArchive(final String moduleName, final Runtime.Version version, final Path directory) {
+    Archive newArchive(
+            final String moduleName, final Runtime.Version version, final Path directory, final boolean acceptAll) {
         var sb = new StringBuilder(60);
         if (moduleName != null) {
             sb.append(moduleName).append('-').append(project.getVersion());
@@ -269,6 +271,7 @@ final class ToolExecutor {
                 directory,
                 forceCreation,
                 isReproducible(),
+                acceptAll,
                 logger);
     }
 

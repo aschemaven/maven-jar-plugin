@@ -161,11 +161,10 @@ final class MetadataFiles implements Closeable {
      * This method returns the base temporary directory followed by files that the "jar" tool will need to add
      *
      * @param archive archive configuration
-     * @param reproducible whether to enforce reproducible build
      * @return arguments for the "jar" tool
      * @throws IOException if an error occurred while writing the files
      */
-    public List<Path> addPOM(final MavenArchiveConfiguration archive, final boolean reproducible) throws IOException {
+    public List<Path> addPOM(final MavenArchiveConfiguration archive) throws IOException {
         final String groupId = project.getGroupId();
         final String artifactId = project.getArtifactId();
         final String version;
@@ -181,8 +180,11 @@ final class MetadataFiles implements Closeable {
         filesToDelete.add(pomFile); // Add soon for deleting this file even if an exception is thrown below.
         /*
          * Subset of above "pom.xml" file but written as a properties file.
-         * If reproducible build is enabled, we will need to reformat after
-         * writing for ensuring a deterministic order of entries.
+         * `Properties.store(…)` always injects a `#<date>` comment line, and writes entries in an
+         * unspecified order. Both would make the JAR non-reproducible, so we always reformat afterwards:
+         * drop the comment lines (including the injected timestamp) and sort the entries. Doing this
+         * unconditionally keeps `pom.properties` deterministic on every JDK — in particular on JDK 17/18,
+         * where the `jar --date` based reproducible path is unavailable.
          */
         final var properties = new Properties();
         Path propertiesFile = archive.getPomPropertiesFile();
@@ -199,16 +201,14 @@ final class MetadataFiles implements Closeable {
             filesToDelete.add(propertiesFile); // Add soon for deleting this file even if an exception is thrown below.
             properties.store(out, "Subset of pom.xml");
         }
-        if (reproducible) {
-            // The encoding can be either UTF-8 or ISO-8859-1, as any non ASCII character
-            // is transformed into a \\uxxxx sequence anyway.
-            Files.writeString(
-                    propertiesFile,
-                    Files.lines(propertiesFile)
-                            .filter(line -> !line.startsWith("#"))
-                            .sorted()
-                            .collect(Collectors.joining("\n", "", "\n"))); // system independent new line.
-        }
+        // The encoding can be either UTF-8 or ISO-8859-1, as any non ASCII character
+        // is transformed into a \\uxxxx sequence anyway.
+        Files.writeString(
+                propertiesFile,
+                Files.lines(propertiesFile)
+                        .filter(line -> !line.startsWith("#"))
+                        .sorted()
+                        .collect(Collectors.joining("\n", "", "\n"))); // system independent new line.
         return List.of(baseDir, Path.of(META_INF, MAVEN_DIR));
     }
 

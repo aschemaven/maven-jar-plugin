@@ -379,7 +379,7 @@ final class ToolExecutor {
                 metadata.deriveModulePOM(this, archive, manifest);
             }
             if (archiveConfiguration.isAddMavenDescriptor()) {
-                archive.mavenFiles = metadata.addPOM(archiveConfiguration, isReproducible());
+                archive.mavenFiles = metadata.addPOM(archiveConfiguration);
             }
             /*
              * Prepare the arguments to send to the `jar` tool and log a message.

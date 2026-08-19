@@ -109,17 +109,6 @@ final class FileCollector extends SimpleFileVisitor<Path> {
     private final boolean acceptAll;
 
     /**
-     * Whether we can declare whole directories to the {@code jar} tool instead of scanning
-     * the directory tree ourselves while collecting files. This is a stricter condition than
-     * {@link #acceptAll}: it also requires that no reproducible order is requested, because
-     * declaring whole sub-directories during collection would mix directory entries with the
-     * individually-collected files in a way that is harder to sort deterministically. The
-     * {@code -C directory .} shortcut in {@link Archive.FileSet#arguments} does not have this
-     * restriction, because the {@code jar} tool sorts the whole directory by itself.
-     */
-    private final boolean addDirectories;
-
-    /**
      * Files found in the output directory when package hierarchy is used.
      * At most one of {@code packageHierarchy} and {@link #moduleHierarchy} can be non-empty.
      */
@@ -180,7 +169,6 @@ final class FileCollector extends SimpleFileVisitor<Path> {
         fileMatcher = matcherFactory.createPathMatcher(directory, mojo.getIncludes(), mojo.getExcludes(), false);
         directoryMatcher = matcherFactory.deriveDirectoryMatcher(fileMatcher);
         acceptAll = matcherFactory.isIncludesAll(fileMatcher) && matcherFactory.isIncludesAll(directoryMatcher);
-        addDirectories = !context.isReproducible() && acceptAll;
         packageHierarchy = context.newArchive(null, null, directory, acceptAll);
         moduleHierarchy = new LinkedHashMap<>();
         resetToPackageHierarchy();
@@ -339,7 +327,12 @@ final class FileCollector extends SimpleFileVisitor<Path> {
          * Do not move this condition inside the `switch` block because `role` may have been modified.
          * The `role` value is now the role of `directory`, not anymore the role of parent directory.
          */
-        if (addDirectories && role == DirectoryRole.RESOURCES) {
+        // When no include/exclude filter is active, declare the whole resource directory to the `jar`
+        // tool (which walks it recursively) instead of collecting individual files. This preserves the
+        // intermediate directory entries (`com/`, `com/acme/`, …) that per-file enumeration drops. It is
+        // done even for reproducible builds, because the JDK 19+ `jar` tool sorts each directory
+        // deterministically (JDK-8276764).
+        if (acceptAll && role == DirectoryRole.RESOURCES) {
             currentFilesToArchive.add(directory, attributes, true);
             /*
              * Since we are skipping the whole directory, `postVisitDirectory(…)` will not be invoked.

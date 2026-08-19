@@ -224,10 +224,17 @@ final class ToolExecutor {
             if (mojo.detectMultiReleaseJar) {
                 manifest.getMainAttributes().remove(Attributes.Name.MULTI_RELEASE);
             }
-            if (!isReproducible()) {
-                // If reproducible build was not requested, let the tool declares itself.
-                // This is a workaround until we port Maven archiver to this JAR plugin.
-                manifest.getMainAttributes().remove("Created-By");
+            /*
+             * When the manifest has no `Created-By`, the `jar` tool stamps its own, JDK- and
+             * vendor-specific value (for example "21.0.10 (Amazon.com Inc.)"). That value is not
+             * reproducible across JDK distributions (Temurin and Corretto disagree), and it appears
+             * even when the user requested `addDefaultEntries=false`. Ensure a stable, JDK-independent
+             * value is present so the tool keeps ours instead of stamping its own. This mirrors the
+             * `Created-By` that Maven archiver writes when default entries are enabled. See #508.
+             */
+            Attributes mainAttributes = manifest.getMainAttributes();
+            if (mainAttributes.getValue("Created-By") == null) {
+                mainAttributes.putValue("Created-By", createdBy());
             }
         }
         manifestFromPlugin = manifest;
@@ -240,6 +247,19 @@ final class ToolExecutor {
      */
     public boolean isReproducible() {
         return outputTimestamp != null;
+    }
+
+    /**
+     * Returns the {@code Created-By} value to use when neither the project configuration nor Maven
+     * archiver provided one (for example with {@code addDefaultEntries=false}). Unlike the value the
+     * {@code jar} tool would stamp, this one is JDK-independent, so it keeps the build reproducible
+     * across JDK distributions. It mirrors the description passed to {@code MavenArchiver.setCreatedBy}.
+     *
+     * @return a stable, JDK-independent {@code Created-By} value
+     */
+    private static String createdBy() {
+        String version = ToolExecutor.class.getPackage().getImplementationVersion();
+        return (version != null) ? "Maven JAR Plugin " + version : "Maven JAR Plugin";
     }
 
     /**

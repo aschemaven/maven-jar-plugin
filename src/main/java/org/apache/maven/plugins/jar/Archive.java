@@ -145,6 +145,13 @@ final class Archive {
          * A comparator for sorting paths in a reproducible order.
          * This comparator assumes that all paths are relative to the same base directory (this is not verified).
          * Note: we do not use {@link Path#compareTo(Path)} because the Javadoc said that it is platform dependent.
+         *
+         * <p>This sort is still required even though the JDK 19+ {@code jar} tool sorts entries itself
+         * (JDK-8276764): the tool sorts <em>within</em> each {@code -C <dir>} group but preserves the order
+         * <em>across</em> groups. So when files are enumerated as several {@code -C} groups (the
+         * include/exclude and multi-release paths), this comparator fixes the cross-group order; without it
+         * the order would follow the unspecified filesystem walk. It is a no-op only in the single
+         * {@code -C <dir> .} case, where {@code jar} sorts everything.</p>
          */
         private static final Comparator<Path> REPRODUCIBLE_ORDER = (p1, p2) -> {
             final int c1 = p1.getNameCount();
